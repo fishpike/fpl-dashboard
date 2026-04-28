@@ -430,11 +430,13 @@
       renderRows('benchBody', bench, playerMap, picksData.picks, true);
 
       const totalValue = picksData.picks.reduce((sum, p) => sum + (playerMap[p.element]?.price || 0), 0);
+      const bank = (picksData.entry_history?.bank || 0) / 10;
 
       // Store snapshot for Copy for Claude
       squadSnapshot = {
         gw,
         totalValue,
+        bank,
         starting: starting.map(pick => {
           const p = playerMap[pick.element];
           return p ? { name: p.name, team: p.team, pos: POS[p.position], price: p.price, isCap: pick.is_captain, isVC: pick.is_vice_captain } : null;
@@ -448,6 +450,10 @@
         <div>
           <div class="summary-label">Squad Value</div>
           <div class="summary-value">£${totalValue.toFixed(1)}m</div>
+        </div>
+        <div>
+          <div class="summary-label">Bank</div>
+          <div class="summary-value">£${bank.toFixed(1)}m</div>
         </div>
         <div>
           <div class="summary-label">Gameweek</div>
@@ -497,16 +503,28 @@
   }
 
   function copyForClaude() {
-    const { gw, starting, bench, totalValue } = squadSnapshot;
+    const { gw, starting, bench, totalValue, bank } = squadSnapshot;
     if (!starting.length) return;
 
     const fmt = p => `${p.name} (${p.team}) £${p.price.toFixed(1)}m${p.isCap ? ' [C]' : p.isVC ? ' [VC]' : ''}`;
 
-    const gkStart   = starting.filter(p => p.pos === 'GK').map(fmt).join(', ');
-    const defStart  = starting.filter(p => p.pos === 'DEF').map(fmt).join(', ');
-    const midStart  = starting.filter(p => p.pos === 'MID').map(fmt).join(', ');
-    const fwdStart  = starting.filter(p => p.pos === 'FWD').map(fmt).join(', ');
-    const benchStr  = bench.map(fmt).join(', ');
+    const gkStart  = starting.filter(p => p.pos === 'GK').map(fmt).join(', ');
+    const defStart = starting.filter(p => p.pos === 'DEF').map(fmt).join(', ');
+    const midStart = starting.filter(p => p.pos === 'MID').map(fmt).join(', ');
+    const fwdStart = starting.filter(p => p.pos === 'FWD').map(fmt).join(', ');
+    const benchStr = bench.map(fmt).join(', ');
+
+    // Compact all-player market — sorted by position then price desc
+    const posOrder = { 1: 0, 2: 1, 3: 2, 4: 3 };
+    const marketLines = ['GK', 'DEF', 'MID', 'FWD'].map(pos => {
+      const posNum = Object.keys(POS).find(k => POS[k] === pos);
+      const players = allPlayers
+        .filter(p => p.position === parseInt(posNum))
+        .sort((a, b) => b.price - a.price)
+        .map(p => `${p.name}(${p.team})£${p.price.toFixed(1)}`)
+        .join(' | ');
+      return `${pos}: ${players}`;
+    }).join('\n');
 
     const text = [
       `=== FPL SQUAD — GW${gw} (Team #5163684) ===`,
@@ -519,8 +537,11 @@
       ``,
       `BENCH: ${benchStr}`,
       ``,
-      `Squad Value: £${totalValue.toFixed(1)}m`,
-      `[C] = Captain  [VC] = Vice-Captain`
+      `Squad Value: £${totalValue.toFixed(1)}m  |  Bank: £${bank.toFixed(1)}m  |  Budget: £${(totalValue + bank).toFixed(1)}m`,
+      `[C] = Captain  [VC] = Vice-Captain`,
+      ``,
+      `=== ALL PLAYERS (by position, price desc) ===`,
+      marketLines
     ].join('\n');
 
     navigator.clipboard.writeText(text).then(() => {
@@ -535,7 +556,6 @@
         btn.classList.remove('copied');
       }, 2500);
     }).catch(() => {
-      // Fallback: just show the preview so user can copy manually
       const preview = document.getElementById('copyPreview');
       preview.textContent = text;
       preview.style.display = 'block';
