@@ -392,9 +392,10 @@
     status.textContent = 'Fetching squad and player data...';
 
     try {
+      const PROXY = 'https://corsproxy.io/?';
       const [bootstrapRes, picksRes] = await Promise.all([
-        fetch('https://fantasy.premierleague.com/api/bootstrap-static/'),
-        fetch(`https://fantasy.premierleague.com/api/entry/${TEAM_ID}/event/${gw}/picks/`)
+        fetch(PROXY + encodeURIComponent('https://fantasy.premierleague.com/api/bootstrap-static/')),
+        fetch(PROXY + encodeURIComponent(`https://fantasy.premierleague.com/api/entry/${TEAM_ID}/event/${gw}/picks/`))
       ]);
 
       if (!bootstrapRes.ok) throw new Error('Bootstrap API failed (' + bootstrapRes.status + ')');
