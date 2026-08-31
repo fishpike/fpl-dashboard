@@ -370,6 +370,27 @@
   .manual-btn:hover { background: rgba(255,215,64,0.07); }
   .manual-btn.active { background: rgba(255,215,64,0.12); }
 
+  .worker-row { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
+  .worker-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    padding: 8px 10px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .worker-input:focus { border-color: var(--green); }
+  #workerStatus {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+  #workerStatus.ok { color: var(--green); }
+
   .fallback-panel {
     display: none;
     background: var(--surface);
@@ -461,6 +482,12 @@
   <button class="load-btn" id="loadBtn" onclick="loadAll()">⚡ Load Intelligence</button>
   <button class="manual-btn" id="manualBtn" onclick="toggleFallback()">⚠ Manual Fallback</button>
 </div>
+
+<div class="worker-row">
+  <input type="text" class="worker-input" id="workerUrlInput" placeholder="Cloudflare Worker URL (optional, e.g. https://fpl-proxy.your-name.workers.dev)" />
+  <button class="manual-btn" onclick="saveWorkerUrl()">💾 Save</button>
+</div>
+<div id="workerStatus"></div>
 
 <!-- Manual Fallback Panel -->
 <div class="fallback-panel" id="fallbackPanel">
@@ -561,10 +588,35 @@ const PROXIES = [
 ];
 let workingProxy = 0;
 const POS = {1:'GK',2:'DEF',3:'MID',4:'FWD'};
+const WORKER_STORAGE_KEY = 'fpl_worker_url';
 
 let allPlayers = [], playerMap = {}, teamMap = {}, fixtureMap = {};
 let squadSnapshot = {}, managerData = {};
 let fixtureGWRange = [];
+
+// ── Cloudflare Worker (preferred data source) ─────────────────────────────────
+
+function getWorkerUrl() {
+  return (localStorage.getItem(WORKER_STORAGE_KEY) || '').trim().replace(/\/+$/, '');
+}
+
+function saveWorkerUrl() {
+  const val = document.getElementById('workerUrlInput').value.trim().replace(/\/+$/, '');
+  localStorage.setItem(WORKER_STORAGE_KEY, val);
+  updateWorkerStatus();
+}
+
+function updateWorkerStatus() {
+  const url = getWorkerUrl();
+  const el = document.getElementById('workerStatus');
+  if (url) {
+    el.className = 'ok';
+    el.textContent = '✓ Using your own Worker: ' + url + ' (falls back to public proxies if it fails)';
+  } else {
+    el.className = '';
+    el.textContent = 'No Worker URL set — relying on public CORS proxies, which are often unreliable.';
+  }
+}
 
 // ── Proxy fetch ──────────────────────────────────────────────────────────────
 
@@ -583,6 +635,19 @@ async function fetchWithTimeout(url, ms=8000) {
 
 async function fetchJSON(url) {
   const errors = [];
+  const workerUrl = getWorkerUrl();
+
+  if (workerUrl) {
+    try {
+      const apiPath = url.replace('https://fantasy.premierleague.com', '');
+      const res = await fetchWithTimeout(workerUrl + apiPath, 10000);
+      if (res.ok) return await res.json();
+      errors.push('Worker: HTTP ' + res.status);
+    } catch(e) {
+      errors.push('Worker: ' + e.message);
+    }
+  }
+
   for (let i = 0; i < PROXIES.length; i++) {
     const idx = (workingProxy + i) % PROXIES.length;
     try {
@@ -597,7 +662,7 @@ async function fetchJSON(url) {
       errors.push('Proxy ' + idx + ': ' + e.message);
     }
   }
-  throw new Error('All proxies failed: ' + errors.join(' | '));
+  throw new Error('All sources failed: ' + errors.join(' | '));
 }
 
 // ── Core data processing (shared by live load and manual fallback) ────────────
@@ -979,6 +1044,11 @@ function copyForClaude() {
     document.getElementById('copyBtn').textContent = '👆 Select text below and copy manually';
   });
 }
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+
+document.getElementById('workerUrlInput').value = getWorkerUrl();
+updateWorkerStatus();
 </script>
 </body>
 </html>
